@@ -34,7 +34,7 @@ function TabBar() {
             key={tab.id}
             onClick={() => navigate(tab.path)}
             className={cn(
-              'flex flex-col items-center justify-center min-w-[64px] py-2 px-3 rounded-lg transition-colors',
+              'flex flex-col items-center justify-center min-w-[64px] min-h-[44px] py-2 px-3 rounded-lg transition-colors',
               isActive ? 'text-blue-600' : 'text-gray-500 hover:text-gray-700'
             )}
           >
@@ -77,7 +77,7 @@ function ScreenRouter() {
 
 function AppContent() {
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <div className="flex flex-col h-full bg-gray-50">
       <ScreenRouter />
       <main className="flex-1 overflow-hidden flex flex-col">
         <Routes>

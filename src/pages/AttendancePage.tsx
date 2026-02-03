@@ -19,11 +19,14 @@ export function AttendancePage() {
   const [achievementsOn, setAchievementsOn] = useState(true);
   const [newPlayerName, setNewPlayerName] = useState('');
 
-  // Filter to only players selected for this tournament
+  // Players for this tournament: pre-selected + anyone added "this week"
   const tournamentPlayers = useMemo(() => {
     if (!tournament) return [];
-    const selectedIds = new Set(tournament.selectedPlayerIds || []);
-    return players.filter((p) => selectedIds.has(p.id));
+    const ids = new Set([
+      ...(tournament.selectedPlayerIds || []),
+      ...(tournament.presentPlayerIds || []),
+    ]);
+    return players.filter((p) => ids.has(p.id));
   }, [players, tournament]);
 
   useEffect(() => {
@@ -76,7 +79,7 @@ export function AttendancePage() {
         onBack={handleBack}
       />
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
         <SectionHeader title="This Week" />
         <div className="bg-white px-4">
           <LabeledToggle

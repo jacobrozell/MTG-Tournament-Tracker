@@ -9,7 +9,7 @@ interface PageHeaderProps {
 export function PageHeader({ title, onAdd, onBack }: PageHeaderProps) {
   return (
     <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-white">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 min-w-0 flex-1">
         {onBack && (
           <button
             onClick={onBack}
@@ -19,7 +19,7 @@ export function PageHeader({ title, onAdd, onBack }: PageHeaderProps) {
             <ChevronLeft className="w-6 h-6" />
           </button>
         )}
-        <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+        <h1 className="text-2xl font-bold text-gray-900 min-w-0 truncate">{title}</h1>
       </div>
       {onAdd && (
         <button

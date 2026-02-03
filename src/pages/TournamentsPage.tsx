@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { PageHeader, SectionHeader, EmptyStateView, Modal, ModalActionBar } from '../components/layout';
 import { TournamentCell, StandingsRow } from '../components/lists';
-import { PrimaryActionButton } from '../components/buttons';
+import { PrimaryActionButton, DestructiveActionButton } from '../components/buttons';
 import { LabeledStepper } from '../components/forms';
 import { AppConstants } from '../constants';
 import { Plus } from 'lucide-react';
@@ -15,6 +15,7 @@ export function TournamentsPage() {
     getCompletedTournaments,
     selectTournament,
     createTournament,
+    deleteTournament,
     addPlayer,
     gameResults,
   } = useAppStore();
@@ -66,6 +67,15 @@ export function TournamentsPage() {
       setShowStandingsModal(true);
     } else {
       selectTournament(id);
+    }
+  };
+
+  const handleDeleteTournament = (id: string) => {
+    if (!window.confirm('Delete this tournament? This cannot be undone.')) return;
+    deleteTournament(id);
+    if (selectedTournamentId === id) {
+      setSelectedTournamentId(null);
+      setShowStandingsModal(false);
     }
   };
 
@@ -133,7 +143,7 @@ export function TournamentsPage() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {ongoing.length > 0 && (
             <>
               <SectionHeader title="Ongoing" />
@@ -143,6 +153,7 @@ export function TournamentsPage() {
                   tournament={t}
                   playerCount={t.presentPlayerIds.length || players.length}
                   onClick={() => handleTournamentClick(t.id)}
+                  onDelete={() => handleDeleteTournament(t.id)}
                 />
               ))}
             </>
@@ -157,6 +168,7 @@ export function TournamentsPage() {
                   playerCount={0}
                   winnerName={getWinnerName(t.id)}
                   onClick={() => handleTournamentClick(t.id)}
+                  onDelete={() => handleDeleteTournament(t.id)}
                 />
               ))}
             </>
@@ -277,6 +289,14 @@ export function TournamentsPage() {
             />
           ))}
         </div>
+        {selectedTournamentId && (
+          <div className="px-4 pb-2">
+            <DestructiveActionButton
+              title="Delete tournament"
+              onClick={() => handleDeleteTournament(selectedTournamentId)}
+            />
+          </div>
+        )}
         <ModalActionBar
           primaryTitle="Close"
           primaryAction={() => setShowStandingsModal(false)}
