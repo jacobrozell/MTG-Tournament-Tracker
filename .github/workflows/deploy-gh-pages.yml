@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [gh-pages]
+    branches: [main]
 
 permissions:
   contents: write
@@ -12,8 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: gh-pages
 
       - uses: actions/setup-node@v4
         with:

@@ -2,7 +2,7 @@
 
 MTG league tournament tracker: tournaments, attendance, pods, achievements, and stats. Data is stored in the browser (localStorage); no backend.
 
-**Deploying to GitHub Pages:** see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+**Deploying to GitHub Pages:** push (or merge) to `main`; the Action builds and deploys to the `gh-pages` branch. See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ### Blank white page after deploy
 

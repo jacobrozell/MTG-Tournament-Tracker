@@ -1,0 +1,2 @@
+* text=auto eol=lf
+*.{yml,yaml} text eol=lf
