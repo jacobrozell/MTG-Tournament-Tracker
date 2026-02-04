@@ -4,3 +4,4 @@ export { ModalActionBar } from './ModalActionBar';
 export { Modal } from './Modal';
 export { PageHeader } from './PageHeader';
 export { SectionHeader } from './SectionHeader';
+export { TabButton } from './TabButton';

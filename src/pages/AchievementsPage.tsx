@@ -1,17 +1,25 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { PageHeader, EmptyStateView, Modal, ModalActionBar } from '../components/layout';
 import { AchievementListRow } from '../components/lists';
 import { PrimaryActionButton } from '../components/buttons';
 import { LabeledStepper, LabeledToggle } from '../components/forms';
+import { getAllAchievementStats } from '../engines/statsEngine';
 
 export function AchievementsPage() {
   const {
     achievements,
+    gameResults,
+    players,
     addAchievement,
     removeAchievement,
     setAchievementAlwaysOn,
   } = useAppStore();
+
+  const achievementStatsById = useMemo(
+    () => getAllAchievementStats(achievements, gameResults, players),
+    [achievements, gameResults, players]
+  );
 
   const [showNewModal, setShowNewModal] = useState(false);
   const [name, setName] = useState('');
@@ -32,7 +40,7 @@ export function AchievementsPage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-50">
+    <div className="flex-1 flex flex-col min-h-0 bg-gray-50">
       <PageHeader title="Achievements" onAdd={handleOpenNew} />
 
       {achievements.length === 0 ? (
@@ -48,16 +56,21 @@ export function AchievementsPage() {
       ) : (
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="bg-white">
-            {achievements.map((ach) => (
-              <AchievementListRow
-                key={ach.id}
-                name={ach.name}
-                points={ach.points}
-                alwaysOn={ach.alwaysOn}
-                onToggleAlwaysOn={(on) => setAchievementAlwaysOn(ach.id, on)}
-                onRemove={() => removeAchievement(ach.id)}
-              />
-            ))}
+            {achievements.map((ach) => {
+              const stats = achievementStatsById[ach.id];
+              return (
+                <AchievementListRow
+                  key={ach.id}
+                  name={ach.name}
+                  points={ach.points}
+                  alwaysOn={ach.alwaysOn}
+                  onToggleAlwaysOn={(on) => setAchievementAlwaysOn(ach.id, on)}
+                  onRemove={() => removeAchievement(ach.id)}
+                  timesEarned={stats?.totalTimesEarned}
+                  topPlayers={stats?.topPlayers.map((p) => ({ playerName: p.playerName, count: p.count }))}
+                />
+              );
+            })}
           </div>
         </div>
       )}

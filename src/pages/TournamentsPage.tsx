@@ -16,13 +16,16 @@ export function TournamentsPage() {
     selectTournament,
     createTournament,
     deleteTournament,
+    updateTournament,
     addPlayer,
     gameResults,
   } = useAppStore();
 
   const [showNewModal, setShowNewModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showStandingsModal, setShowStandingsModal] = useState(false);
   const [selectedTournamentId, setSelectedTournamentId] = useState<string | null>(null);
+  const [editingTournamentId, setEditingTournamentId] = useState<string | null>(null);
 
   // New tournament form state
   const [name, setName] = useState('');
@@ -30,6 +33,11 @@ export function TournamentsPage() {
   const [randomPerWeek, setRandomPerWeek] = useState(AppConstants.League.defaultRandomAchievementsPerWeek);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Set<string>>(new Set());
   const [newPlayerName, setNewPlayerName] = useState('');
+
+  // Edit tournament form state
+  const [editName, setEditName] = useState('');
+  const [editWeeks, setEditWeeks] = useState(6);
+  const [editRandomPerWeek, setEditRandomPerWeek] = useState(2);
 
   const ongoing = getOngoingTournaments();
   const completed = getCompletedTournaments();
@@ -77,6 +85,27 @@ export function TournamentsPage() {
       setSelectedTournamentId(null);
       setShowStandingsModal(false);
     }
+  };
+
+  const handleOpenEdit = (id: string) => {
+    const tournament = tournaments.find((t) => t.id === id);
+    if (!tournament) return;
+    setEditingTournamentId(id);
+    setEditName(tournament.name);
+    setEditWeeks(tournament.totalWeeks);
+    setEditRandomPerWeek(tournament.randomAchievementsPerWeek);
+    setShowEditModal(true);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingTournamentId || !editName.trim()) return;
+    updateTournament(editingTournamentId, {
+      name: editName,
+      totalWeeks: editWeeks,
+      randomAchievementsPerWeek: editRandomPerWeek,
+    });
+    setShowEditModal(false);
+    setEditingTournamentId(null);
   };
 
   // Memoize winner name lookup
@@ -136,7 +165,7 @@ export function TournamentsPage() {
   }, [selectedTournamentId, gameResults, players]);
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-50">
+    <div className="flex-1 flex flex-col min-h-0 bg-gray-50">
       <PageHeader title="Tournaments" onAdd={handleOpenNew} />
 
       {tournaments.length === 0 ? (
@@ -160,6 +189,7 @@ export function TournamentsPage() {
                   tournament={t}
                   playerCount={t.presentPlayerIds.length || players.length}
                   onClick={() => handleTournamentClick(t.id)}
+                  onEdit={() => handleOpenEdit(t.id)}
                   onDelete={() => handleDeleteTournament(t.id)}
                 />
               ))}
@@ -175,6 +205,7 @@ export function TournamentsPage() {
                   playerCount={0}
                   winnerName={getWinnerName(t.id)}
                   onClick={() => handleTournamentClick(t.id)}
+                  onEdit={() => handleOpenEdit(t.id)}
                   onDelete={() => handleDeleteTournament(t.id)}
                 />
               ))}
@@ -273,6 +304,51 @@ export function TournamentsPage() {
           primaryDisabled={!name.trim() || selectedPlayerIds.size === 0}
           secondaryTitle="Cancel"
           secondaryAction={() => setShowNewModal(false)}
+        />
+      </Modal>
+
+      {/* Edit Tournament Modal */}
+      <Modal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title="Edit Tournament"
+      >
+        <div className="p-4 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Tournament Name
+            </label>
+            <input
+              type="text"
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              placeholder="Enter tournament name"
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+            />
+          </div>
+
+          <LabeledStepper
+            title="Weeks"
+            value={editWeeks}
+            onChange={setEditWeeks}
+            min={AppConstants.League.weeksRange.min}
+            max={AppConstants.League.weeksRange.max}
+          />
+
+          <LabeledStepper
+            title="Random achievements/week"
+            value={editRandomPerWeek}
+            onChange={setEditRandomPerWeek}
+            min={AppConstants.League.randomAchievementsPerWeekRange.min}
+            max={AppConstants.League.randomAchievementsPerWeekRange.max}
+          />
+        </div>
+        <ModalActionBar
+          primaryTitle="Save Changes"
+          primaryAction={handleSaveEdit}
+          primaryDisabled={!editName.trim()}
+          secondaryTitle="Cancel"
+          secondaryAction={() => setShowEditModal(false)}
         />
       </Modal>
 

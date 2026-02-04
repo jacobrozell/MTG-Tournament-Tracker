@@ -10,6 +10,7 @@ import type {
   PodSnapshot,
   AchievementCheck,
   WeekBoundaryState,
+  AchievementSummary,
 } from '../types';
 import { AppConstants } from '../constants';
 import { generateId } from '../utils';
@@ -23,6 +24,7 @@ import {
 interface AppState {
   // League State
   activeTournamentId: string | null;
+  selectedPlayerId: string | null;
   currentScreen: Screen;
 
   // Collections
@@ -38,6 +40,8 @@ interface AppState {
   // Player actions
   addPlayer: (name: string) => Player | null;
   removePlayer: (id: string) => void;
+  selectPlayer: (id: string) => void;
+  clearSelectedPlayer: () => void;
 
   // Achievement actions
   addAchievement: (name: string, points: number, alwaysOn: boolean) => Achievement | null;
@@ -49,6 +53,7 @@ interface AppState {
   selectTournament: (id: string) => void;
   archiveTournament: () => void;
   deleteTournament: (id: string) => void;
+  updateTournament: (id: string, updates: Partial<Pick<Tournament, 'name' | 'totalWeeks' | 'randomAchievementsPerWeek'>>) => void;
 
   // Attendance actions
   confirmAttendance: (presentIds: string[], achievementsOn: boolean) => void;
@@ -67,6 +72,10 @@ interface AppState {
   getCompletedTournaments: () => Tournament[];
   getPlayerById: (id: string) => Player | undefined;
   getAchievementById: (id: string) => Achievement | undefined;
+  getSelectedPlayer: () => Player | undefined;
+  getPlayerGameResults: (playerId: string) => GameResult[];
+  getPlayerTournaments: (playerId: string) => Tournament[];
+  getPlayerAchievementHistory: (playerId: string) => AchievementSummary[];
 }
 
 export const useAppStore = create<AppState>()(
@@ -74,6 +83,7 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       // Initial State
       activeTournamentId: null,
+      selectedPlayerId: null,
       currentScreen: 'tournaments',
       players: [],
       achievements: [
@@ -114,6 +124,14 @@ export const useAppStore = create<AppState>()(
         set((state) => ({
           players: state.players.filter((p) => p.id !== id),
         }));
+      },
+
+      selectPlayer: (id) => {
+        set({ selectedPlayerId: id, currentScreen: 'playerDetail' });
+      },
+
+      clearSelectedPlayer: () => {
+        set({ selectedPlayerId: null });
       },
 
       // Achievement Actions
@@ -189,7 +207,7 @@ export const useAppStore = create<AppState>()(
           tournaments: [...get().tournaments, newTournament],
           players: updatedPlayers,
           activeTournamentId: newTournament.id,
-          currentScreen: 'attendance',
+          currentScreen: 'tournamentDetail',
         });
       },
 
@@ -197,11 +215,7 @@ export const useAppStore = create<AppState>()(
         const tournament = get().tournaments.find((t) => t.id === id);
         if (!tournament) return;
 
-        if (tournament.status === 'completed') {
-          set({ activeTournamentId: id, currentScreen: 'tournamentStandings' });
-        } else {
-          set({ activeTournamentId: id, currentScreen: 'attendance' });
-        }
+        set({ activeTournamentId: id, currentScreen: 'tournamentDetail' });
       },
 
       archiveTournament: () => {
@@ -228,6 +242,20 @@ export const useAppStore = create<AppState>()(
           // Clear active tournament if it was the deleted one
           ...(activeTournamentId === id ? { activeTournamentId: null, currentScreen: 'tournaments' as Screen } : {}),
         });
+      },
+
+      updateTournament: (id, updates) => {
+        set((state) => ({
+          tournaments: state.tournaments.map((t) => {
+            if (t.id !== id) return t;
+            return {
+              ...t,
+              ...(updates.name !== undefined && { name: updates.name.trim() || t.name }),
+              ...(updates.totalWeeks !== undefined && { totalWeeks: clampWeeks(updates.totalWeeks) }),
+              ...(updates.randomAchievementsPerWeek !== undefined && { randomAchievementsPerWeek: clampRandomPerWeek(updates.randomAchievementsPerWeek) }),
+            };
+          }),
+        }));
       },
 
       // Attendance Actions
@@ -272,7 +300,6 @@ export const useAppStore = create<AppState>()(
                 }
               : t
           ),
-          currentScreen: 'pods',
         });
       },
 
@@ -488,7 +515,6 @@ export const useAppStore = create<AppState>()(
           });
 
           let updatedTournament: Tournament;
-          let nextScreen: Screen | undefined;
 
           if (isLastRound && isFinalWeek) {
             // End tournament
@@ -502,7 +528,6 @@ export const useAppStore = create<AppState>()(
               roundAchievementChecks: [],
               currentPods: [],
             };
-            nextScreen = 'tournamentStandings';
           } else if (isLastRound) {
             // Advance to next week
             const newActiveAchievements = rollActiveAchievements(
@@ -523,7 +548,6 @@ export const useAppStore = create<AppState>()(
               roundAchievementChecks: [],
               currentPods: [],
             };
-            nextScreen = 'attendance';
           } else {
             // Next round in same week
             updatedTournament = {
@@ -542,7 +566,6 @@ export const useAppStore = create<AppState>()(
             tournaments: tournaments.map((t) => (t.id === activeTournamentId ? updatedTournament : t)),
             players: updatedPlayers,
             gameResults: [...gameResults, ...newGameResults],
-            ...(nextScreen ? { currentScreen: nextScreen } : {}),
           };
         });
       },
@@ -647,6 +670,55 @@ export const useAppStore = create<AppState>()(
 
       getAchievementById: (id) => {
         return get().achievements.find((a) => a.id === id);
+      },
+
+      getSelectedPlayer: () => {
+        const { selectedPlayerId, players } = get();
+        return players.find((p) => p.id === selectedPlayerId);
+      },
+
+      getPlayerGameResults: (playerId) => {
+        return get().gameResults.filter((r) => r.playerId === playerId);
+      },
+
+      getPlayerTournaments: (playerId) => {
+        const { tournaments, gameResults } = get();
+        // Get tournament IDs where this player has game results
+        const tournamentIds = new Set(
+          gameResults
+            .filter((r) => r.playerId === playerId)
+            .map((r) => r.tournamentId)
+        );
+        return tournaments.filter((t) => tournamentIds.has(t.id));
+      },
+
+      getPlayerAchievementHistory: (playerId) => {
+        const { gameResults, achievements } = get();
+        const playerResults = gameResults.filter((r) => r.playerId === playerId);
+        
+        // Count achievements earned
+        const achievementCounts: Record<string, number> = {};
+        playerResults.forEach((result) => {
+          result.achievementIds.forEach((achId) => {
+            achievementCounts[achId] = (achievementCounts[achId] || 0) + 1;
+          });
+        });
+
+        // Build summary
+        const summaries: AchievementSummary[] = [];
+        Object.entries(achievementCounts).forEach(([achId, count]) => {
+          const achievement = achievements.find((a) => a.id === achId);
+          if (achievement) {
+            summaries.push({
+              achievement,
+              count,
+              totalPoints: achievement.points * count,
+            });
+          }
+        });
+
+        // Sort by total points descending
+        return summaries.sort((a, b) => b.totalPoints - a.totalPoints);
       },
     }),
     {

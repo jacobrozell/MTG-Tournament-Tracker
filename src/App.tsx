@@ -1,22 +1,64 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Trophy, Users, BarChart3, Star } from 'lucide-react';
 import { useAppStore } from './stores/useAppStore';
-import { TournamentsPage, AttendancePage, PodsPage, StatsPage, AchievementsPage } from './pages';
+import { 
+  TournamentsPage, 
+  TournamentDetailPage,
+  PlayersPage, 
+  PlayerDetailPage,
+  StatsPage, 
+  AchievementsPage 
+} from './pages';
 import { cn } from './utils';
 import { useEffect, useRef } from 'react';
+
+function SyncStoreFromUrl() {
+  const location = useLocation();
+  const { setScreen, setActiveTournament, clearSelectedPlayer, selectPlayer } = useAppStore();
+  const pathname = location.pathname;
+
+  useEffect(() => {
+    if (pathname === '/' || pathname === '') {
+      setScreen('tournaments');
+      setActiveTournament(null);
+      clearSelectedPlayer();
+    } else if (pathname.startsWith('/tournament/')) {
+      const id = pathname.slice('/tournament/'.length);
+      if (id) {
+        setScreen('tournamentDetail');
+        setActiveTournament(id);
+      }
+    } else if (pathname === '/players') {
+      setScreen('players');
+      clearSelectedPlayer();
+    } else if (pathname.startsWith('/player/')) {
+      const id = pathname.slice('/player/'.length);
+      if (id) {
+        setScreen('playerDetail');
+        selectPlayer(id);
+      }
+    } else if (pathname === '/stats') {
+      setScreen('stats');
+    } else if (pathname === '/achievements') {
+      setScreen('achievements');
+    }
+  }, [pathname, setScreen, setActiveTournament, clearSelectedPlayer, selectPlayer]);
+
+  return null;
+}
 
 function TabBar() {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Hide tab bar on attendance page
-  if (location.pathname === '/attendance') {
+  // Hide tab bar on detail pages
+  if (location.pathname.startsWith('/tournament/') || location.pathname.startsWith('/player/')) {
     return null;
   }
 
   const tabs = [
     { id: 'tournaments', label: 'Tournaments', icon: Trophy, path: '/' },
-    { id: 'pods', label: 'Pods', icon: Users, path: '/pods' },
+    { id: 'players', label: 'Players', icon: Users, path: '/players' },
     { id: 'stats', label: 'Stats', icon: BarChart3, path: '/stats' },
     { id: 'achievements', label: 'Achievements', icon: Star, path: '/achievements' },
   ];
@@ -49,7 +91,7 @@ function TabBar() {
 
 function ScreenRouter() {
   const navigate = useNavigate();
-  const { currentScreen } = useAppStore();
+  const { currentScreen, activeTournamentId, selectedPlayerId } = useAppStore();
   const prevScreen = useRef(currentScreen);
 
   // Only navigate when currentScreen changes (from store actions)
@@ -58,19 +100,32 @@ function ScreenRouter() {
       prevScreen.current = currentScreen;
       
       switch (currentScreen) {
-        case 'attendance':
-          navigate('/attendance');
+        case 'tournamentDetail':
+          if (activeTournamentId) {
+            navigate(`/tournament/${activeTournamentId}`);
+          }
           break;
-        case 'pods':
-          navigate('/pods');
+        case 'playerDetail':
+          if (selectedPlayerId) {
+            navigate(`/player/${selectedPlayerId}`);
+          }
           break;
-        case 'tournamentStandings':
+        case 'players':
+          navigate('/players');
+          break;
+        case 'stats':
+          navigate('/stats');
+          break;
+        case 'achievements':
+          navigate('/achievements');
+          break;
         case 'tournaments':
+        default:
           navigate('/');
           break;
       }
     }
-  }, [currentScreen, navigate]);
+  }, [currentScreen, navigate, activeTournamentId, selectedPlayerId]);
 
   return null;
 }
@@ -78,12 +133,14 @@ function ScreenRouter() {
 function AppContent() {
   return (
     <div className="flex flex-col h-full bg-gray-50">
+      <SyncStoreFromUrl />
       <ScreenRouter />
       <main className="flex-1 overflow-hidden flex flex-col">
         <Routes>
           <Route path="/" element={<TournamentsPage />} />
-          <Route path="/attendance" element={<AttendancePage />} />
-          <Route path="/pods" element={<PodsPage />} />
+          <Route path="/tournament/:id" element={<TournamentDetailPage />} />
+          <Route path="/players" element={<PlayersPage />} />
+          <Route path="/player/:id" element={<PlayerDetailPage />} />
           <Route path="/stats" element={<StatsPage />} />
           <Route path="/achievements" element={<AchievementsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

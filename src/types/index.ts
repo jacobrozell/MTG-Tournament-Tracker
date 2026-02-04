@@ -64,11 +64,11 @@ export interface GameResult {
 // Navigation
 export type Screen =
   | 'tournaments'
-  | 'newTournament'
-  | 'addPlayers'
-  | 'attendance'
-  | 'pods'
-  | 'tournamentStandings';
+  | 'tournamentDetail'
+  | 'players'
+  | 'playerDetail'
+  | 'stats'
+  | 'achievements';
 
 // Supporting Types
 export interface AchievementCheck {
@@ -122,6 +122,33 @@ export interface HeadToHeadRecord {
   player2Wins: number;
   ties: number;
   totalGames: number;
+}
+
+// Summary types for player detail views
+export interface TournamentSummary {
+  tournament: Tournament;
+  gamesPlayed: number;
+  wins: number;
+  totalPoints: number;
+  placementPoints: number;
+  achievementPoints: number;
+}
+
+export interface AchievementSummary {
+  achievement: Achievement;
+  count: number;
+  totalPoints: number;
+}
+
+export interface AchievementTopPlayer {
+  playerId: string;
+  playerName: string;
+  count: number;
+}
+
+export interface AchievementStats {
+  totalTimesEarned: number;
+  topPlayers: AchievementTopPlayer[];
 }
 
 // Computed helpers

@@ -1,4 +1,4 @@
-import { ChevronRight, Trash2 } from 'lucide-react';
+import { ChevronRight, Trash2, Pencil } from 'lucide-react';
 import type { Tournament } from '../../types';
 import { formatDateRange } from '../../utils';
 
@@ -7,6 +7,7 @@ interface TournamentCellProps {
   playerCount: number;
   winnerName?: string;
   onClick: () => void;
+  onEdit?: () => void;
   onDelete?: () => void;
 }
 
@@ -15,6 +16,7 @@ export function TournamentCell({
   playerCount,
   winnerName,
   onClick,
+  onEdit,
   onDelete,
 }: TournamentCellProps) {
   const isOngoing = tournament.status === 'ongoing';
@@ -49,6 +51,19 @@ export function TournamentCell({
         <p className="text-sm text-gray-500 mt-0.5">{getSubtitle()}</p>
       </div>
       <div className="flex items-center gap-1 shrink-0">
+        {onEdit && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit();
+            }}
+            aria-label="Edit tournament"
+            className="p-1.5 rounded text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+          >
+            <Pencil className="w-5 h-5" />
+          </button>
+        )}
         {onDelete && (
           <button
             type="button"
