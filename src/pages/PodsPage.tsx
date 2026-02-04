@@ -24,6 +24,8 @@ export function PodsPage() {
   const tournament = getActiveTournament();
   const [showStandingsModal, setShowStandingsModal] = useState(false);
 
+  // All hooks must be called before any early returns
+
   // Resolve stored pod IDs to Player objects
   const pods = useMemo(() => {
     if (!tournament) return [];
@@ -37,6 +39,43 @@ export function PodsPage() {
     return achievements.filter((a) => tournament.activeAchievementIds.includes(a.id));
   }, [tournament, achievements]);
 
+  // Memoize weekly standings to avoid recalculation on every render
+  const weeklyStandings = useMemo(() => {
+    if (!tournament) return [];
+    const sortedIds = sortByWeeklyPoints(
+      tournament.presentPlayerIds,
+      tournament.weeklyPointsByPlayer
+    );
+
+    return sortedIds.map((id) => {
+      const player = players.find((p) => p.id === id);
+      const weekly = tournament.weeklyPointsByPlayer[id] || { placementPoints: 0, achievementPoints: 0 };
+      return {
+        player,
+        ...weekly,
+        total: weekly.placementPoints + weekly.achievementPoints,
+      };
+    });
+  }, [tournament, players]);
+
+  // Memoize achievement checks set for O(1) lookup
+  const achievementChecksSet = useMemo(
+    () => (tournament ? new Set(tournament.roundAchievementChecks) : new Set<string>()),
+    [tournament]
+  );
+
+  const isAchievementChecked = useCallback(
+    (playerId: string, achievementId: string) => {
+      return achievementChecksSet.has(`${playerId}:${achievementId}`);
+    },
+    [achievementChecksSet]
+  );
+
+  const handleBack = useCallback(() => {
+    setScreen('attendance');
+  }, [setScreen]);
+
+  // Early return after all hooks
   if (!tournament) {
     return (
       <div className="flex-1 flex items-center justify-center p-4">
@@ -58,52 +97,15 @@ export function PodsPage() {
 
   const handleNextRound = () => {
     nextRound();
-    // Pods are cleared by nextRound in the store
   };
 
   const handleUndo = () => {
     undoLastPod();
-    // Pods are cleared by undoLastPod in the store
   };
 
   const canGenerate = tournament.presentPlayerIds.length >= 1;
   const canUndo = tournament.podHistorySnapshots.length > 0;
   const hasAnyPlacement = Object.keys(tournament.roundPlacements).length > 0;
-
-  // Memoize weekly standings to avoid recalculation on every render
-  const weeklyStandings = useMemo(() => {
-    const sortedIds = sortByWeeklyPoints(
-      tournament.presentPlayerIds,
-      tournament.weeklyPointsByPlayer
-    );
-
-    return sortedIds.map((id) => {
-      const player = players.find((p) => p.id === id);
-      const weekly = tournament.weeklyPointsByPlayer[id] || { placementPoints: 0, achievementPoints: 0 };
-      return {
-        player,
-        ...weekly,
-        total: weekly.placementPoints + weekly.achievementPoints,
-      };
-    });
-  }, [tournament.presentPlayerIds, tournament.weeklyPointsByPlayer, players]);
-
-  // Memoize achievement checks set for O(1) lookup
-  const achievementChecksSet = useMemo(
-    () => new Set(tournament.roundAchievementChecks),
-    [tournament.roundAchievementChecks]
-  );
-
-  const isAchievementChecked = useCallback(
-    (playerId: string, achievementId: string) => {
-      return achievementChecksSet.has(`${playerId}:${achievementId}`);
-    },
-    [achievementChecksSet]
-  );
-
-  const handleBack = () => {
-    setScreen('attendance');
-  };
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-gray-50">

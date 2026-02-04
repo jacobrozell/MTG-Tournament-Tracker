@@ -33,13 +33,13 @@ export function AttendancePage() {
     return players.filter((p) => ids.has(p.id));
   }, [players, tournament]);
 
+  // Initialize state once per tournament week - guarded by ref to prevent cascading renders
   useEffect(() => {
-    // Only initialize once per tournament week, not on every player change
     if (!tournamentWeekKey || !tournament || initializedForRef.current === tournamentWeekKey) return;
     if (tournamentPlayers.length === 0) return;
     initializedForRef.current = tournamentWeekKey;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPresentIds(new Set(tournamentPlayers.map((p) => p.id)));
-    // Initialize achievementsOn from store (respects previous setting for this week)
     setAchievementsOn(tournament.achievementsOnThisWeek);
   }, [tournamentPlayers, tournamentWeekKey, tournament]);
 

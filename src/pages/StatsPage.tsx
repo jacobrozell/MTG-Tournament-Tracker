@@ -10,22 +10,10 @@ export function StatsPage() {
 
   const tournament = getActiveTournament();
 
+  // All hooks must be called before any early returns
+
   // Memoize sorted players
   const sortedPlayers = useMemo(() => sortPlayersByTotalPoints(players), [players]);
-
-  if (players.length === 0) {
-    return (
-      <div className="flex-1 flex flex-col bg-gray-50">
-        <PageHeader title="Stats" />
-        <div className="flex-1 flex items-center justify-center">
-          <EmptyStateView
-            message="No players yet"
-            hint="Create a tournament to add players"
-          />
-        </div>
-      </div>
-    );
-  }
 
   // Memoize weekly standings
   const weeklyStandings = useMemo(() => {
@@ -61,6 +49,21 @@ export function StatsPage() {
     },
     [players]
   );
+
+  // Early return after all hooks
+  if (players.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col bg-gray-50">
+        <PageHeader title="Stats" />
+        <div className="flex-1 flex items-center justify-center">
+          <EmptyStateView
+            message="No players yet"
+            hint="Create a tournament to add players"
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50">

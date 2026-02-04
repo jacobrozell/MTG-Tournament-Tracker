@@ -48,6 +48,7 @@ interface AppState {
   createTournament: (name: string, totalWeeks: number, randomPerWeek: number, playerIds: string[]) => void;
   selectTournament: (id: string) => void;
   archiveTournament: () => void;
+  deleteTournament: (id: string) => void;
 
   // Attendance actions
   confirmAttendance: (presentIds: string[], achievementsOn: boolean) => void;
@@ -215,6 +216,17 @@ export const useAppStore = create<AppState>()(
           ),
           activeTournamentId: null,
           currentScreen: 'tournaments',
+        });
+      },
+
+      deleteTournament: (id) => {
+        const { activeTournamentId, tournaments, gameResults } = get();
+
+        set({
+          tournaments: tournaments.filter((t) => t.id !== id),
+          gameResults: gameResults.filter((r) => r.tournamentId !== id),
+          // Clear active tournament if it was the deleted one
+          ...(activeTournamentId === id ? { activeTournamentId: null, currentScreen: 'tournaments' as Screen } : {}),
         });
       },
 
