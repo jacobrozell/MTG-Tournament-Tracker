@@ -29,7 +29,7 @@ export function PodsPage() {
   // Resolve stored pod IDs to Player objects
   const pods = useMemo(() => {
     if (!tournament) return [];
-    return tournament.currentPods.map((podIds) =>
+    return (tournament.currentPods || []).map((podIds) =>
       podIds.map((id) => players.find((p) => p.id === id)).filter((p): p is Player => p !== undefined)
     );
   }, [tournament, players]);
