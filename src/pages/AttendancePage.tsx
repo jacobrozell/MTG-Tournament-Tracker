@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { PageHeader, SectionHeader } from '../components/layout';
 import { PrimaryActionButton } from '../components/buttons';
@@ -18,6 +18,10 @@ export function AttendancePage() {
   const [presentIds, setPresentIds] = useState<Set<string>>(new Set());
   const [achievementsOn, setAchievementsOn] = useState(true);
   const [newPlayerName, setNewPlayerName] = useState('');
+  const initializedForRef = useRef<string | null>(null);
+
+  // Unique key for this tournament week
+  const tournamentWeekKey = tournament ? `${tournament.id}-${tournament.currentWeek}` : null;
 
   // Players for this tournament: pre-selected + anyone added "this week"
   const tournamentPlayers = useMemo(() => {
@@ -30,9 +34,14 @@ export function AttendancePage() {
   }, [players, tournament]);
 
   useEffect(() => {
-    // Default: all tournament players present
+    // Only initialize once per tournament week, not on every player change
+    if (!tournamentWeekKey || !tournament || initializedForRef.current === tournamentWeekKey) return;
+    if (tournamentPlayers.length === 0) return;
+    initializedForRef.current = tournamentWeekKey;
     setPresentIds(new Set(tournamentPlayers.map((p) => p.id)));
-  }, [tournamentPlayers]);
+    // Initialize achievementsOn from store (respects previous setting for this week)
+    setAchievementsOn(tournament.achievementsOnThisWeek);
+  }, [tournamentPlayers, tournamentWeekKey, tournament]);
 
   if (!tournament) {
     return (

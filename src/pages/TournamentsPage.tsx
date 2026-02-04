@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { PageHeader, SectionHeader, EmptyStateView, Modal, ModalActionBar } from '../components/layout';
 import { TournamentCell, StandingsRow } from '../components/lists';
@@ -79,32 +79,39 @@ export function TournamentsPage() {
     }
   };
 
-  const getWinnerName = (tournamentId: string) => {
-    const tournamentResults = gameResults.filter((r) => r.tournamentId === tournamentId);
-    if (tournamentResults.length === 0) return undefined;
+  // Memoize winner name lookup
+  const getWinnerName = useCallback(
+    (tournamentId: string) => {
+      const tournamentResults = gameResults.filter((r) => r.tournamentId === tournamentId);
+      if (tournamentResults.length === 0) return undefined;
 
-    const pointsByPlayer: Record<string, number> = {};
-    tournamentResults.forEach((r) => {
-      pointsByPlayer[r.playerId] = (pointsByPlayer[r.playerId] || 0) + r.placementPoints + r.achievementPoints;
-    });
+      const pointsByPlayer: Record<string, number> = {};
+      tournamentResults.forEach((r) => {
+        pointsByPlayer[r.playerId] = (pointsByPlayer[r.playerId] || 0) + r.placementPoints + r.achievementPoints;
+      });
 
-    let winnerId = '';
-    let maxPoints = -1;
-    Object.entries(pointsByPlayer).forEach(([playerId, points]) => {
-      if (points > maxPoints) {
-        maxPoints = points;
-        winnerId = playerId;
-      }
-    });
+      let winnerId = '';
+      let maxPoints = -1;
+      Object.entries(pointsByPlayer).forEach(([playerId, points]) => {
+        if (points > maxPoints) {
+          maxPoints = points;
+          winnerId = playerId;
+        }
+      });
 
-    return players.find((p) => p.id === winnerId)?.name;
-  };
+      return players.find((p) => p.id === winnerId)?.name;
+    },
+    [gameResults, players]
+  );
 
-  const selectedTournament = selectedTournamentId
-    ? tournaments.find((t) => t.id === selectedTournamentId)
-    : null;
+  // Memoize selected tournament lookup
+  const selectedTournament = useMemo(
+    () => (selectedTournamentId ? tournaments.find((t) => t.id === selectedTournamentId) : null),
+    [selectedTournamentId, tournaments]
+  );
 
-  const getTournamentStandings = () => {
+  // Memoize tournament standings calculation
+  const tournamentStandings = useMemo(() => {
     if (!selectedTournamentId) return [];
     const tournamentResults = gameResults.filter((r) => r.tournamentId === selectedTournamentId);
     
@@ -126,7 +133,7 @@ export function TournamentsPage() {
       }))
       .filter((s) => s.player)
       .sort((a, b) => b.total - a.total);
-  };
+  }, [selectedTournamentId, gameResults, players]);
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50">
@@ -276,7 +283,7 @@ export function TournamentsPage() {
         title={selectedTournament ? `${selectedTournament.name} - Final Rankings` : 'Final Rankings'}
       >
         <div>
-          {getTournamentStandings().map((s, i) => (
+          {tournamentStandings.map((s, i) => (
             <StandingsRow
               key={s.player!.id}
               rank={i + 1}

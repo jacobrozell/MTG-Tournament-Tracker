@@ -9,6 +9,7 @@ import type {
   WeeklyPlayerPoints,
   PodSnapshot,
   AchievementCheck,
+  WeekBoundaryState,
 } from '../types';
 import { AppConstants } from '../constants';
 import { generateId } from '../utils';
@@ -47,15 +48,15 @@ interface AppState {
   createTournament: (name: string, totalWeeks: number, randomPerWeek: number, playerIds: string[]) => void;
   selectTournament: (id: string) => void;
   archiveTournament: () => void;
-  deleteTournament: (id: string) => void;
 
   // Attendance actions
   confirmAttendance: (presentIds: string[], achievementsOn: boolean) => void;
   addWeeklyPlayer: (name: string) => Player | null;
 
   // Pods actions
-  updatePlacement: (playerId: string, placement: number) => void;
+  updatePlacement: (playerId: string, placement: number | null) => void;
   updateAchievementCheck: (playerId: string, achievementId: string, checked: boolean) => void;
+  setCurrentPods: (pods: string[][]) => void;
   nextRound: () => void;
   undoLastPod: () => void;
   
@@ -173,6 +174,7 @@ export const useAppStore = create<AppState>()(
           roundPlacements: {},
           roundAchievementChecks: [],
           podHistorySnapshots: [],
+          currentPods: [],
         };
 
         // Increment tournamentsPlayed for selected players
@@ -216,38 +218,29 @@ export const useAppStore = create<AppState>()(
         });
       },
 
-      deleteTournament: (id) => {
-        const { activeTournamentId, tournaments, players, gameResults } = get();
-        const tournament = tournaments.find((t) => t.id === id);
-        if (!tournament) return;
-
-        const playerIdsInTournament = new Set([
-          ...(tournament.selectedPlayerIds || []),
-          ...(tournament.presentPlayerIds || []),
-        ]);
-
-        set({
-          tournaments: tournaments.filter((t) => t.id !== id),
-          gameResults: gameResults.filter((r) => r.tournamentId !== id),
-          players: players.map((p) =>
-            playerIdsInTournament.has(p.id) && p.tournamentsPlayed > 0
-              ? { ...p, tournamentsPlayed: p.tournamentsPlayed - 1 }
-              : p
-          ),
-          ...(activeTournamentId === id
-            ? { activeTournamentId: null as string | null, currentScreen: 'tournaments' as Screen }
-            : {}),
-        });
-      },
-
       // Attendance Actions
       confirmAttendance: (presentIds, achievementsOn) => {
         const { activeTournamentId, tournaments } = get();
         if (!activeTournamentId) return;
 
-        const weeklyPointsByPlayer: Record<string, WeeklyPlayerPoints> = {};
+        const tournament = tournaments.find((t) => t.id === activeTournamentId);
+        if (!tournament) return;
+
+        // Check if we have existing data (placements, pods, or history)
+        const hasExistingData =
+          Object.keys(tournament.roundPlacements).length > 0 ||
+          tournament.currentPods.length > 0 ||
+          tournament.podHistorySnapshots.length > 0;
+
+        // Build weeklyPointsByPlayer - preserve existing entries, add new ones
+        const weeklyPointsByPlayer: Record<string, WeeklyPlayerPoints> = hasExistingData
+          ? { ...tournament.weeklyPointsByPlayer }
+          : {};
+        
         presentIds.forEach((id) => {
-          weeklyPointsByPlayer[id] = { placementPoints: 0, achievementPoints: 0 };
+          if (!weeklyPointsByPlayer[id]) {
+            weeklyPointsByPlayer[id] = { placementPoints: 0, achievementPoints: 0 };
+          }
         });
 
         set({
@@ -257,11 +250,13 @@ export const useAppStore = create<AppState>()(
                   ...t,
                   presentPlayerIds: presentIds,
                   achievementsOnThisWeek: achievementsOn,
-                  currentRound: 1,
+                  // Only reset round state if there's no existing data
+                  currentRound: hasExistingData ? t.currentRound : 1,
                   weeklyPointsByPlayer,
-                  podHistorySnapshots: [],
-                  roundPlacements: {},
-                  roundAchievementChecks: [],
+                  podHistorySnapshots: hasExistingData ? t.podHistorySnapshots : [],
+                  roundPlacements: hasExistingData ? t.roundPlacements : {},
+                  roundAchievementChecks: hasExistingData ? t.roundAchievementChecks : [],
+                  currentPods: hasExistingData ? t.currentPods : [],
                 }
               : t
           ),
@@ -312,14 +307,13 @@ export const useAppStore = create<AppState>()(
         if (!activeTournamentId) return;
 
         set({
-          tournaments: tournaments.map((t) =>
-            t.id === activeTournamentId
-              ? {
-                  ...t,
-                  roundPlacements: { ...t.roundPlacements, [playerId]: placement },
-                }
-              : t
-          ),
+          tournaments: tournaments.map((t) => {
+            if (t.id !== activeTournamentId) return t;
+            const next = { ...t.roundPlacements };
+            if (placement === null) delete next[playerId];
+            else next[playerId] = placement;
+            return { ...t, roundPlacements: next };
+          }),
         });
       },
 
@@ -344,232 +338,280 @@ export const useAppStore = create<AppState>()(
         });
       },
 
-      nextRound: () => {
-        const { activeTournamentId, tournaments, players, achievements, gameResults } = get();
+      setCurrentPods: (pods) => {
+        const { activeTournamentId, tournaments } = get();
         if (!activeTournamentId) return;
 
-        const tournament = tournaments.find((t) => t.id === activeTournamentId);
-        if (!tournament) return;
+        set({
+          tournaments: tournaments.map((t) =>
+            t.id === activeTournamentId ? { ...t, currentPods: pods } : t
+          ),
+        });
+      },
 
-        // Skip if no placements recorded
-        const placementEntries = Object.entries(tournament.roundPlacements);
-        if (placementEntries.length === 0) return;
+      nextRound: () => {
+        // Use functional update to ensure we work with fresh state
+        set((state) => {
+          const { activeTournamentId, tournaments, players, achievements, gameResults } = state;
+          if (!activeTournamentId) return state;
 
-        const podId = generateId();
-        const newGameResults: GameResult[] = [];
-        const playerDeltas: Record<string, { placementPoints: number; achievementPoints: number; wins: number; gamesPlayed: number }> = {};
-        const weeklyDeltas: Record<string, WeeklyPlayerPoints> = {};
-        const achievementChecks: AchievementCheck[] = [];
+          const tournament = tournaments.find((t) => t.id === activeTournamentId);
+          if (!tournament) return state;
 
-        // Process each player's placement
-        placementEntries.forEach(([playerId, placement]) => {
-          const placementPoints = calculatePlacementPoints(placement);
-          
-          // Get achievement checks for this player
-          const playerAchievementIds = tournament.roundAchievementChecks
-            .filter((check) => check.startsWith(`${playerId}:`))
-            .map((check) => check.split(':')[1]);
+          // Skip if no placements recorded
+          const placementEntries = Object.entries(tournament.roundPlacements);
+          if (placementEntries.length === 0) return state;
 
-          const achievementPoints = tournament.achievementsOnThisWeek
-            ? playerAchievementIds.reduce((sum, achId) => {
-                const ach = achievements.find((a) => a.id === achId);
-                return sum + (ach?.points ?? 0);
-              }, 0)
-            : 0;
+          const podId = generateId();
+          const newGameResults: GameResult[] = [];
+          const playerDeltas: Record<string, { placementPoints: number; achievementPoints: number; wins: number; gamesPlayed: number }> = {};
+          const weeklyDeltas: Record<string, WeeklyPlayerPoints> = {};
+          const achievementChecks: AchievementCheck[] = [];
 
-          // Store achievement checks for undo
-          playerAchievementIds.forEach((achId) => {
-            const ach = achievements.find((a) => a.id === achId);
-            if (ach) {
-              achievementChecks.push({
-                playerId,
-                achievementId: achId,
-                points: ach.points,
-              });
-            }
+          // Process each player's placement
+          placementEntries.forEach(([playerId, placement]) => {
+            const placementPoints = calculatePlacementPoints(placement);
+            
+            // Get achievement checks for this player
+            const playerAchievementIds = tournament.roundAchievementChecks
+              .filter((check) => check.startsWith(`${playerId}:`))
+              .map((check) => check.split(':')[1]);
+
+            const achievementPoints = tournament.achievementsOnThisWeek
+              ? playerAchievementIds.reduce((sum, achId) => {
+                  const ach = achievements.find((a) => a.id === achId);
+                  return sum + (ach?.points ?? 0);
+                }, 0)
+              : 0;
+
+            // Store achievement checks for undo
+            playerAchievementIds.forEach((achId) => {
+              const ach = achievements.find((a) => a.id === achId);
+              if (ach) {
+                achievementChecks.push({
+                  playerId,
+                  achievementId: achId,
+                  points: ach.points,
+                });
+              }
+            });
+
+            // Create delta for undo
+            playerDeltas[playerId] = {
+              placementPoints,
+              achievementPoints,
+              wins: placement === 1 ? 1 : 0,
+              gamesPlayed: 1,
+            };
+
+            weeklyDeltas[playerId] = {
+              placementPoints,
+              achievementPoints,
+            };
+
+            // Create game result
+            newGameResults.push({
+              id: generateId(),
+              tournamentId: activeTournamentId,
+              week: tournament.currentWeek,
+              round: tournament.currentRound,
+              playerId,
+              placement,
+              placementPoints,
+              achievementPoints,
+              achievementIds: playerAchievementIds,
+              timestamp: new Date().toISOString(),
+              podId,
+            });
           });
 
-          // Create delta for undo
-          playerDeltas[playerId] = {
-            placementPoints,
-            achievementPoints,
-            wins: placement === 1 ? 1 : 0,
-            gamesPlayed: 1,
-          };
+          // Determine next state early to know if we need week boundary data
+          const isLastRound = tournament.currentRound >= AppConstants.League.roundsPerWeek;
+          const isFinalWeek = tournament.currentWeek >= tournament.totalWeeks;
 
-          weeklyDeltas[playerId] = {
-            placementPoints,
-            achievementPoints,
-          };
-
-          // Create game result
-          newGameResults.push({
-            id: generateId(),
-            tournamentId: activeTournamentId,
-            week: tournament.currentWeek,
-            round: tournament.currentRound,
-            playerId,
-            placement,
-            placementPoints,
-            achievementPoints,
-            achievementIds: playerAchievementIds,
-            timestamp: new Date().toISOString(),
+          // Create snapshot for undo
+          const snapshot: PodSnapshot = {
             podId,
+            playerIds: placementEntries.map(([id]) => id),
+            placements: { ...tournament.roundPlacements },
+            achievementChecks,
+            playerDeltas,
+            weeklyDeltas,
+          };
+
+          // If advancing to next week (not final), store week boundary data for undo
+          if (isLastRound && !isFinalWeek) {
+            const weekBoundary: WeekBoundaryState = {
+              previousWeek: tournament.currentWeek,
+              previousPresentPlayerIds: [...tournament.presentPlayerIds],
+              previousWeeklyPointsByPlayer: { ...tournament.weeklyPointsByPlayer },
+              previousActiveAchievementIds: [...tournament.activeAchievementIds],
+              previousAchievementsOnThisWeek: tournament.achievementsOnThisWeek,
+              previousPodHistorySnapshots: [...tournament.podHistorySnapshots],
+            };
+            snapshot.weekBoundary = weekBoundary;
+          }
+
+          // Update player cumulative stats (using fresh players from state)
+          const updatedPlayers = players.map((p) => {
+            const delta = playerDeltas[p.id];
+            if (!delta) return p;
+            return {
+              ...p,
+              placementPoints: p.placementPoints + delta.placementPoints,
+              achievementPoints: p.achievementPoints + delta.achievementPoints,
+              wins: p.wins + delta.wins,
+              gamesPlayed: p.gamesPlayed + delta.gamesPlayed,
+            };
           });
-        });
 
-        // Create snapshot for undo
-        const snapshot: PodSnapshot = {
-          podId,
-          playerIds: placementEntries.map(([id]) => id),
-          placements: { ...tournament.roundPlacements },
-          achievementChecks,
-          playerDeltas,
-          weeklyDeltas,
-        };
+          // Update weekly points
+          const updatedWeeklyPoints = { ...tournament.weeklyPointsByPlayer };
+          Object.entries(weeklyDeltas).forEach(([playerId, delta]) => {
+            const current = updatedWeeklyPoints[playerId] || { placementPoints: 0, achievementPoints: 0 };
+            updatedWeeklyPoints[playerId] = {
+              placementPoints: current.placementPoints + delta.placementPoints,
+              achievementPoints: current.achievementPoints + delta.achievementPoints,
+            };
+          });
 
-        // Update player cumulative stats
-        const updatedPlayers = players.map((p) => {
-          const delta = playerDeltas[p.id];
-          if (!delta) return p;
+          let updatedTournament: Tournament;
+          let nextScreen: Screen | undefined;
+
+          if (isLastRound && isFinalWeek) {
+            // End tournament
+            updatedTournament = {
+              ...tournament,
+              status: 'completed',
+              endDate: new Date().toISOString(),
+              weeklyPointsByPlayer: updatedWeeklyPoints,
+              podHistorySnapshots: [...tournament.podHistorySnapshots, snapshot],
+              roundPlacements: {},
+              roundAchievementChecks: [],
+              currentPods: [],
+            };
+            nextScreen = 'tournamentStandings';
+          } else if (isLastRound) {
+            // Advance to next week
+            const newActiveAchievements = rollActiveAchievements(
+              achievements,
+              tournament.randomAchievementsPerWeek
+            );
+
+            updatedTournament = {
+              ...tournament,
+              currentWeek: tournament.currentWeek + 1,
+              currentRound: 1,
+              presentPlayerIds: [],
+              weeklyPointsByPlayer: {},
+              activeAchievementIds: newActiveAchievements.map((a) => a.id),
+              // Keep the snapshot with weekBoundary data for undo capability
+              podHistorySnapshots: [snapshot],
+              roundPlacements: {},
+              roundAchievementChecks: [],
+              currentPods: [],
+            };
+            nextScreen = 'attendance';
+          } else {
+            // Next round in same week
+            updatedTournament = {
+              ...tournament,
+              currentRound: tournament.currentRound + 1,
+              weeklyPointsByPlayer: updatedWeeklyPoints,
+              podHistorySnapshots: [...tournament.podHistorySnapshots, snapshot],
+              roundPlacements: {},
+              roundAchievementChecks: [],
+              currentPods: [],
+            };
+          }
+
           return {
-            ...p,
-            placementPoints: p.placementPoints + delta.placementPoints,
-            achievementPoints: p.achievementPoints + delta.achievementPoints,
-            wins: p.wins + delta.wins,
-            gamesPlayed: p.gamesPlayed + delta.gamesPlayed,
+            ...state,
+            tournaments: tournaments.map((t) => (t.id === activeTournamentId ? updatedTournament : t)),
+            players: updatedPlayers,
+            gameResults: [...gameResults, ...newGameResults],
+            ...(nextScreen ? { currentScreen: nextScreen } : {}),
           };
         });
-
-        // Update weekly points
-        const updatedWeeklyPoints = { ...tournament.weeklyPointsByPlayer };
-        Object.entries(weeklyDeltas).forEach(([playerId, delta]) => {
-          const current = updatedWeeklyPoints[playerId] || { placementPoints: 0, achievementPoints: 0 };
-          updatedWeeklyPoints[playerId] = {
-            placementPoints: current.placementPoints + delta.placementPoints,
-            achievementPoints: current.achievementPoints + delta.achievementPoints,
-          };
-        });
-
-        // Determine next state
-        const isLastRound = tournament.currentRound >= AppConstants.League.roundsPerWeek;
-        const isFinalWeek = tournament.currentWeek >= tournament.totalWeeks;
-
-        let updatedTournament: Tournament;
-
-        if (isLastRound && isFinalWeek) {
-          // End tournament
-          updatedTournament = {
-            ...tournament,
-            status: 'completed',
-            endDate: new Date().toISOString(),
-            weeklyPointsByPlayer: updatedWeeklyPoints,
-            podHistorySnapshots: [...tournament.podHistorySnapshots, snapshot],
-            roundPlacements: {},
-            roundAchievementChecks: [],
-          };
-          
-          set({
-            tournaments: tournaments.map((t) => (t.id === activeTournamentId ? updatedTournament : t)),
-            players: updatedPlayers,
-            gameResults: [...gameResults, ...newGameResults],
-            currentScreen: 'tournamentStandings',
-          });
-        } else if (isLastRound) {
-          // Advance to next week
-          const newActiveAchievements = rollActiveAchievements(
-            achievements,
-            tournament.randomAchievementsPerWeek
-          );
-
-          updatedTournament = {
-            ...tournament,
-            currentWeek: tournament.currentWeek + 1,
-            currentRound: 1,
-            presentPlayerIds: [],
-            weeklyPointsByPlayer: {},
-            activeAchievementIds: newActiveAchievements.map((a) => a.id),
-            podHistorySnapshots: [],
-            roundPlacements: {},
-            roundAchievementChecks: [],
-          };
-
-          set({
-            tournaments: tournaments.map((t) => (t.id === activeTournamentId ? updatedTournament : t)),
-            players: updatedPlayers,
-            gameResults: [...gameResults, ...newGameResults],
-            currentScreen: 'attendance',
-          });
-        } else {
-          // Next round in same week
-          updatedTournament = {
-            ...tournament,
-            currentRound: tournament.currentRound + 1,
-            weeklyPointsByPlayer: updatedWeeklyPoints,
-            podHistorySnapshots: [...tournament.podHistorySnapshots, snapshot],
-            roundPlacements: {},
-            roundAchievementChecks: [],
-          };
-
-          set({
-            tournaments: tournaments.map((t) => (t.id === activeTournamentId ? updatedTournament : t)),
-            players: updatedPlayers,
-            gameResults: [...gameResults, ...newGameResults],
-          });
-        }
       },
 
       undoLastPod: () => {
-        const { activeTournamentId, tournaments, players, gameResults } = get();
-        if (!activeTournamentId) return;
+        // Use functional update to ensure we work with fresh state
+        set((state) => {
+          const { activeTournamentId, tournaments, players, gameResults } = state;
+          if (!activeTournamentId) return state;
 
-        const tournament = tournaments.find((t) => t.id === activeTournamentId);
-        if (!tournament || tournament.podHistorySnapshots.length === 0) return;
+          const tournament = tournaments.find((t) => t.id === activeTournamentId);
+          if (!tournament || tournament.podHistorySnapshots.length === 0) return state;
 
-        const snapshot = tournament.podHistorySnapshots[tournament.podHistorySnapshots.length - 1];
+          const snapshot = tournament.podHistorySnapshots[tournament.podHistorySnapshots.length - 1];
 
-        // Reverse player cumulative stats
-        const updatedPlayers = players.map((p) => {
-          const delta = snapshot.playerDeltas[p.id];
-          if (!delta) return p;
-          return {
-            ...p,
-            placementPoints: p.placementPoints - delta.placementPoints,
-            achievementPoints: p.achievementPoints - delta.achievementPoints,
-            wins: p.wins - delta.wins,
-            gamesPlayed: p.gamesPlayed - delta.gamesPlayed,
-          };
-        });
+          // Reverse player cumulative stats
+          const updatedPlayers = players.map((p) => {
+            const delta = snapshot.playerDeltas[p.id];
+            if (!delta) return p;
+            return {
+              ...p,
+              placementPoints: p.placementPoints - delta.placementPoints,
+              achievementPoints: p.achievementPoints - delta.achievementPoints,
+              wins: p.wins - delta.wins,
+              gamesPlayed: p.gamesPlayed - delta.gamesPlayed,
+            };
+          });
 
-        // Reverse weekly points
-        const updatedWeeklyPoints = { ...tournament.weeklyPointsByPlayer };
-        Object.entries(snapshot.weeklyDeltas).forEach(([playerId, delta]) => {
-          const current = updatedWeeklyPoints[playerId];
-          if (current) {
-            updatedWeeklyPoints[playerId] = {
-              placementPoints: current.placementPoints - delta.placementPoints,
-              achievementPoints: current.achievementPoints - delta.achievementPoints,
+          // Delete corresponding game results
+          const filteredResults = gameResults.filter((r) => r.podId !== snapshot.podId);
+
+          let updatedTournament: Tournament;
+
+          // Check if this snapshot has week boundary data (we're undoing a week advancement)
+          if (snapshot.weekBoundary) {
+            const wb = snapshot.weekBoundary;
+            // Restore the previous week's full state
+            updatedTournament = {
+              ...tournament,
+              currentWeek: wb.previousWeek,
+              currentRound: AppConstants.League.roundsPerWeek, // Back to last round of previous week
+              presentPlayerIds: wb.previousPresentPlayerIds,
+              weeklyPointsByPlayer: wb.previousWeeklyPointsByPlayer,
+              activeAchievementIds: wb.previousActiveAchievementIds,
+              achievementsOnThisWeek: wb.previousAchievementsOnThisWeek,
+              podHistorySnapshots: wb.previousPodHistorySnapshots,
+              roundPlacements: {},
+              roundAchievementChecks: [],
+              currentPods: [],
+            };
+          } else {
+            // Normal undo within the same week
+            // Reverse weekly points
+            const updatedWeeklyPoints = { ...tournament.weeklyPointsByPlayer };
+            Object.entries(snapshot.weeklyDeltas).forEach(([playerId, delta]) => {
+              const current = updatedWeeklyPoints[playerId];
+              if (current) {
+                updatedWeeklyPoints[playerId] = {
+                  placementPoints: current.placementPoints - delta.placementPoints,
+                  achievementPoints: current.achievementPoints - delta.achievementPoints,
+                };
+              }
+            });
+
+            updatedTournament = {
+              ...tournament,
+              currentRound: tournament.currentRound > 1 ? tournament.currentRound - 1 : tournament.currentRound,
+              weeklyPointsByPlayer: updatedWeeklyPoints,
+              podHistorySnapshots: tournament.podHistorySnapshots.slice(0, -1),
+              roundPlacements: {},
+              roundAchievementChecks: [],
+              currentPods: [],
             };
           }
-        });
 
-        // Delete corresponding game results
-        const filteredResults = gameResults.filter((r) => r.podId !== snapshot.podId);
-
-        // Update tournament
-        const updatedTournament: Tournament = {
-          ...tournament,
-          currentRound: tournament.currentRound > 1 ? tournament.currentRound - 1 : tournament.currentRound,
-          weeklyPointsByPlayer: updatedWeeklyPoints,
-          podHistorySnapshots: tournament.podHistorySnapshots.slice(0, -1),
-          roundPlacements: {},
-          roundAchievementChecks: [],
-        };
-
-        set({
-          tournaments: tournaments.map((t) => (t.id === activeTournamentId ? updatedTournament : t)),
-          players: updatedPlayers,
-          gameResults: filteredResults,
+          return {
+            ...state,
+            tournaments: tournaments.map((t) => (t.id === activeTournamentId ? updatedTournament : t)),
+            players: updatedPlayers,
+            gameResults: filteredResults,
+          };
         });
       },
 

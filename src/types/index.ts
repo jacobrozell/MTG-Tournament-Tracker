@@ -43,6 +43,7 @@ export interface Tournament {
   roundPlacements: Record<string, number>;
   roundAchievementChecks: string[]; // Array of "playerId:achievementId" strings
   podHistorySnapshots: PodSnapshot[];
+  currentPods: string[][]; // Player IDs grouped by pod, persisted to survive navigation
 }
 
 // GameResult
@@ -83,6 +84,16 @@ export interface PlayerDelta {
   gamesPlayed: number;
 }
 
+// Stores the state needed to revert a week advancement
+export interface WeekBoundaryState {
+  previousWeek: number;
+  previousPresentPlayerIds: string[];
+  previousWeeklyPointsByPlayer: Record<string, WeeklyPlayerPoints>;
+  previousActiveAchievementIds: string[];
+  previousAchievementsOnThisWeek: boolean;
+  previousPodHistorySnapshots: PodSnapshot[];
+}
+
 export interface PodSnapshot {
   podId: string;
   playerIds: string[];
@@ -90,6 +101,8 @@ export interface PodSnapshot {
   achievementChecks: AchievementCheck[];
   playerDeltas: Record<string, PlayerDelta>;
   weeklyDeltas: Record<string, WeeklyPlayerPoints>;
+  // Optional: present when this snapshot represents a week boundary (last round of a week)
+  weekBoundary?: WeekBoundaryState;
 }
 
 // Stats Types

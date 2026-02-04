@@ -1,3 +1,4 @@
+import { useMemo, useCallback } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { PageHeader, SectionHeader, EmptyStateView } from '../components/layout';
 import { PlayerRow, StandingsRow } from '../components/lists';
@@ -8,7 +9,9 @@ export function StatsPage() {
   const { players, getActiveTournament } = useAppStore();
 
   const tournament = getActiveTournament();
-  const sortedPlayers = sortPlayersByTotalPoints(players);
+
+  // Memoize sorted players
+  const sortedPlayers = useMemo(() => sortPlayersByTotalPoints(players), [players]);
 
   if (players.length === 0) {
     return (
@@ -24,7 +27,8 @@ export function StatsPage() {
     );
   }
 
-  const getWeeklyStandings = () => {
+  // Memoize weekly standings
+  const weeklyStandings = useMemo(() => {
     if (!tournament) return [];
 
     const sortedIds = sortByWeeklyPoints(
@@ -44,15 +48,19 @@ export function StatsPage() {
         total: weekly.placementPoints + weekly.achievementPoints,
       };
     });
-  };
+  }, [tournament, players]);
 
-  const getPlayerStats = (playerId: string) => {
-    const player = players.find((p) => p.id === playerId);
-    if (!player) return '';
+  // Memoize player stats formatter
+  const getPlayerStats = useCallback(
+    (playerId: string) => {
+      const player = players.find((p) => p.id === playerId);
+      if (!player) return '';
 
-    const total = getPlayerTotalPoints(player);
-    return `${total} pts - ${player.wins} wins - ${player.gamesPlayed} games - ${player.tournamentsPlayed} tournaments`;
-  };
+      const total = getPlayerTotalPoints(player);
+      return `${total} pts - ${player.wins} wins - ${player.gamesPlayed} games - ${player.tournamentsPlayed} tournaments`;
+    },
+    [players]
+  );
 
   return (
     <div className="flex-1 flex flex-col bg-gray-50">
@@ -66,7 +74,7 @@ export function StatsPage() {
               title={`Week ${tournament.currentWeek} Standings`}
               subtitle={tournament.name}
             />
-            {getWeeklyStandings().map((s, i) => (
+            {weeklyStandings.map((s, i) => (
               <StandingsRow
                 key={s.player?.id || i}
                 rank={i + 1}

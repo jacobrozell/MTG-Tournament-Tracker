@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useAppStore } from '../stores/useAppStore';
 import { PageHeader, SectionHeader, EmptyStateView, HintText, Modal, ModalActionBar } from '../components/layout';
 import { PrimaryActionButton, SecondaryButton } from '../components/buttons';
@@ -15,14 +15,22 @@ export function PodsPage() {
     getActiveTournament,
     updatePlacement,
     updateAchievementCheck,
+    setCurrentPods,
     nextRound,
     undoLastPod,
     setScreen,
   } = useAppStore();
 
   const tournament = getActiveTournament();
-  const [pods, setPods] = useState<Player[][]>([]);
   const [showStandingsModal, setShowStandingsModal] = useState(false);
+
+  // Resolve stored pod IDs to Player objects
+  const pods = useMemo(() => {
+    if (!tournament) return [];
+    return tournament.currentPods.map((podIds) =>
+      podIds.map((id) => players.find((p) => p.id === id)).filter((p): p is Player => p !== undefined)
+    );
+  }, [tournament, players]);
 
   const activeAchievements = useMemo(() => {
     if (!tournament) return [];
@@ -44,27 +52,26 @@ export function PodsPage() {
       tournament.currentRound,
       tournament.weeklyPointsByPlayer
     );
-    setPods(newPods);
-
-    // Initialize placements (empty)
-    // Placements are stored in tournament.roundPlacements
+    // Store pod IDs in tournament state (survives navigation)
+    setCurrentPods(newPods.map((pod) => pod.map((p) => p.id)));
   };
 
   const handleNextRound = () => {
     nextRound();
-    setPods([]); // Clear pods for next round
+    // Pods are cleared by nextRound in the store
   };
 
   const handleUndo = () => {
     undoLastPod();
-    setPods([]);
+    // Pods are cleared by undoLastPod in the store
   };
 
   const canGenerate = tournament.presentPlayerIds.length >= 1;
   const canUndo = tournament.podHistorySnapshots.length > 0;
   const hasAnyPlacement = Object.keys(tournament.roundPlacements).length > 0;
 
-  const getWeeklyStandings = () => {
+  // Memoize weekly standings to avoid recalculation on every render
+  const weeklyStandings = useMemo(() => {
     const sortedIds = sortByWeeklyPoints(
       tournament.presentPlayerIds,
       tournament.weeklyPointsByPlayer
@@ -79,18 +86,27 @@ export function PodsPage() {
         total: weekly.placementPoints + weekly.achievementPoints,
       };
     });
-  };
+  }, [tournament.presentPlayerIds, tournament.weeklyPointsByPlayer, players]);
 
-  const isAchievementChecked = (playerId: string, achievementId: string) => {
-    return tournament.roundAchievementChecks.includes(`${playerId}:${achievementId}`);
-  };
+  // Memoize achievement checks set for O(1) lookup
+  const achievementChecksSet = useMemo(
+    () => new Set(tournament.roundAchievementChecks),
+    [tournament.roundAchievementChecks]
+  );
+
+  const isAchievementChecked = useCallback(
+    (playerId: string, achievementId: string) => {
+      return achievementChecksSet.has(`${playerId}:${achievementId}`);
+    },
+    [achievementChecksSet]
+  );
 
   const handleBack = () => {
     setScreen('attendance');
   };
 
   return (
-    <div className="flex-1 flex flex-col bg-gray-50">
+    <div className="flex-1 flex flex-col min-h-0 bg-gray-50">
       <PageHeader title={`Pods - Round ${tournament.currentRound}`} onBack={handleBack} />
 
       <div className="flex-1 min-h-0 overflow-y-auto">
@@ -129,7 +145,7 @@ export function PodsPage() {
               title={`Week ${tournament.currentWeek} Standings`}
               subtitle={tournament.name}
             />
-            {getWeeklyStandings().slice(0, 5).map((s, i) => (
+            {weeklyStandings.slice(0, 5).map((s, i) => (
               <StandingsRow
                 key={s.player?.id || i}
                 rank={i + 1}
@@ -140,12 +156,12 @@ export function PodsPage() {
                 mode="weekly"
               />
             ))}
-            {getWeeklyStandings().length > 5 && (
+            {weeklyStandings.length > 5 && (
               <button
                 onClick={() => setShowStandingsModal(true)}
                 className="w-full py-2 text-blue-600 text-sm font-medium hover:bg-gray-50"
               >
-                View all {getWeeklyStandings().length} players
+                View all {weeklyStandings.length} players
               </button>
             )}
           </>
@@ -207,7 +223,7 @@ export function PodsPage() {
         title={`Week ${tournament.currentWeek} Standings`}
       >
         <div>
-          {getWeeklyStandings().map((s, i) => (
+          {weeklyStandings.map((s, i) => (
             <StandingsRow
               key={s.player?.id || i}
               rank={i + 1}
